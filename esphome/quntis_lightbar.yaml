@@ -1,0 +1,248 @@
+substitutions:
+  device_name: quntis-lightbar
+  friendly_name: "Quntis Monitor Lightbar"
+
+  # --- Pinout Option A: Basic ESP32 (VSPI default) ---
+  nrf_ce_pin: "4"
+  nrf_csn_pin: "5"
+  nrf_sck_pin: "18"
+  nrf_miso_pin: "19"
+  nrf_mosi_pin: "23"
+
+  # --- Pinout Option B: ESP32-S3-WROOM-1 (FSPI default, uncomment to use) ---
+  # nrf_ce_pin: "9"
+  # nrf_csn_pin: "10"
+  # nrf_sck_pin: "12"
+  # nrf_miso_pin: "13"
+  # nrf_mosi_pin: "11"
+
+  # --- Remote Address & Header ---
+  # If your lightbar does not respond out-of-the-box, toggle "Pair / Sniff Remote"
+  # in Home Assistant while pressing your remote near the nRF24L01+ antenna, then
+  # copy the discovered bytes from the ESPHome logs into these substitutions:
+  remote_addr_0: "0xAA"
+  remote_addr_1: "0x41"
+  remote_addr_2: "0x5F"
+  remote_addr_3: "0x98"
+  remote_addr_4: "0xE7"
+
+  remote_hdr_0: "0x83"
+  remote_hdr_1: "0x18"
+  remote_hdr_2: "0x5B"
+  remote_hdr_3: "0x01"
+
+esphome:
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+  includes:
+    - quntis_rf.h
+  platformio_options:
+    lib_deps:
+      - SPI
+  on_boot:
+    priority: 600
+    then:
+      - lambda: |-
+          quntis::rf = new quntis::QuntisRF(
+              ${nrf_ce_pin}, ${nrf_csn_pin},
+              ${nrf_sck_pin}, ${nrf_miso_pin}, ${nrf_mosi_pin}
+          );
+          quntis::rf->set_address(${remote_addr_0}, ${remote_addr_1}, ${remote_addr_2}, ${remote_addr_3}, ${remote_addr_4});
+          quntis::rf->set_header(${remote_hdr_0}, ${remote_hdr_1}, ${remote_hdr_2}, ${remote_hdr_3});
+          quntis::rf->begin();
+
+# For Basic ESP32:
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+# For ESP32-S3-WROOM-1 (uncomment and comment out the esp32 block above):
+# esp32:
+#   board: esp32-s3-devkitc-1
+#   framework:
+#     type: arduino
+
+logger:
+  level: INFO
+
+api:
+  encryption:
+    key: "REPLACE_WITH_YOUR_ESPHOME_API_KEY"
+
+ota:
+  - platform: esphome
+    password: "REPLACE_WITH_YOUR_OTA_PASSWORD"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+globals:
+  - id: ha_tx_pending
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: ha_tx_due_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: target_bri_float
+    type: float
+    restore_value: no
+    initial_value: '0.333'
+  - id: target_ct_float
+    type: float
+    restore_value: no
+    initial_value: '0.635'
+
+output:
+  - platform: template
+    id: out_brightness
+    type: float
+    write_action:
+      - lambda: |-
+          id(target_bri_float) = state;
+          if (quntis::rf != nullptr && !quntis::rf->updating_from_rf_) {
+            id(ha_tx_pending) = true;
+            id(ha_tx_due_ms) = millis() + 10;
+          }
+
+  - platform: template
+    id: out_color_temp
+    type: float
+    write_action:
+      - lambda: |-
+          id(target_ct_float) = state;
+          if (quntis::rf != nullptr && !quntis::rf->updating_from_rf_) {
+            id(ha_tx_pending) = true;
+            id(ha_tx_due_ms) = millis() + 10;
+          }
+
+light:
+  - platform: color_temperature
+    id: quntis_front_light
+    name: "Front Light"
+    brightness: out_brightness
+    color_temperature: out_color_temp
+    cold_white_color_temperature: 6500 K
+    warm_white_color_temperature: 3000 K
+    gamma_correct: 1.0
+    default_transition_length: 0s
+
+switch:
+  - platform: template
+    id: quntis_rgb_switch
+    name: "RGB Backlight"
+    icon: "mdi:led-strip-variant"
+    optimistic: true
+    turn_on_action:
+      - lambda: |-
+          if (quntis::rf != nullptr && !quntis::rf->updating_from_rf_) {
+            quntis::rf->set_rgb_backlight(true, (uint8_t)id(quntis_rgb_mode).state);
+          }
+    turn_off_action:
+      - lambda: |-
+          if (quntis::rf != nullptr && !quntis::rf->updating_from_rf_) {
+            quntis::rf->set_rgb_backlight(false, (uint8_t)id(quntis_rgb_mode).state);
+          }
+
+  - platform: template
+    id: quntis_sniff_switch
+    name: "Pair / Sniff Remote"
+    icon: "mdi:radar"
+    entity_category: config
+    optimistic: true
+    turn_on_action:
+      - lambda: |-
+          if (quntis::rf != nullptr) {
+            quntis::rf->set_sniff_mode(true);
+          }
+    turn_off_action:
+      - lambda: |-
+          if (quntis::rf != nullptr) {
+            quntis::rf->set_sniff_mode(false);
+          }
+
+number:
+  - platform: template
+    id: quntis_rgb_mode
+    name: "RGB Backlight Mode"
+    icon: "mdi:palette"
+    min_value: 1
+    max_value: 15
+    step: 1
+    initial_value: 14
+    optimistic: true
+    set_action:
+      - lambda: |-
+          if (quntis::rf != nullptr && !quntis::rf->updating_from_rf_) {
+            id(quntis_rgb_switch).publish_state(true);
+            quntis::rf->set_rgb_backlight(true, (uint8_t)x);
+          }
+
+button:
+  - platform: template
+    id: quntis_rgb_cycle_btn
+    name: "RGB Cycle Mode"
+    icon: "mdi:autorenew"
+    on_press:
+      - lambda: |-
+          if (quntis::rf != nullptr) {
+            uint8_t next_mode = (quntis::rf->rgb_mode_ % 15) + 1;
+            quntis::rf->updating_from_rf_ = true;
+            id(quntis_rgb_switch).publish_state(true);
+            id(quntis_rgb_mode).publish_state(next_mode);
+            quntis::rf->updating_from_rf_ = false;
+            quntis::rf->set_rgb_backlight(true, next_mode);
+          }
+
+interval:
+  - interval: 2ms
+    then:
+      - lambda: |-
+          if (quntis::rf == nullptr) return;
+
+          // 1. Flush any debounced Home Assistant Front Light change to RF
+          if (id(ha_tx_pending) && (int32_t)(millis() - id(ha_tx_due_ms)) >= 0) {
+            id(ha_tx_pending) = false;
+            bool is_on = id(quntis_front_light).current_values.is_on() && (id(target_bri_float) > 0.005f);
+            // Map 0.0..1.0 brightness to 0x1A (26) .. 0xFF (255)
+            uint8_t bri_byte = is_on ? (uint8_t)roundf(26.0f + id(target_bri_float) * (255.0f - 26.0f)) : 0x00;
+            // In ESPHome color_temperature output, 0.0 = cold (6500K -> 0xFF), 1.0 = warm (3000K -> 0x47/0x1A)
+            uint8_t ct_byte = (uint8_t)roundf(255.0f - id(target_ct_float) * (255.0f - 26.0f));
+            quntis::rf->set_front_light(is_on, bri_byte, ct_byte);
+          }
+
+          // 2. Run RF TX burst state machine & RX remote sniffer
+          if (quntis::rf->loop()) {
+            quntis::rf->updating_from_rf_ = true;
+
+            if (!quntis::rf->sniff_mode_ && id(quntis_sniff_switch).state) {
+              id(quntis_sniff_switch).publish_state(false);
+            }
+
+            // Sync Front Light state to Home Assistant
+            auto call = id(quntis_front_light).make_call();
+            call.set_transition_length(0);
+            call.set_state(quntis::rf->front_on_);
+            if (quntis::rf->front_on_) {
+              float bri_f = (float)(quntis::rf->brightness_ > 26 ? quntis::rf->brightness_ - 26 : 0) / (255.0f - 26.0f);
+              if (bri_f < 0.01f) bri_f = 0.01f;
+              if (bri_f > 1.0f) bri_f = 1.0f;
+              call.set_brightness(bri_f);
+            }
+            // Convert p[6] (26=warm .. 255=cool) to mireds (153.8 = 6500K cool, 333.3 = 3000K warm)
+            float ct_norm = (float)(quntis::rf->color_temp_ > 26 ? quntis::rf->color_temp_ - 26 : 0) / (255.0f - 26.0f);
+            if (ct_norm < 0.0f) ct_norm = 0.0f;
+            if (ct_norm > 1.0f) ct_norm = 1.0f;
+            float mireds = 333.3f - ct_norm * (333.3f - 153.8f);
+            call.set_color_temperature(mireds);
+            call.perform();
+
+            // Sync RGB Backlight state to Home Assistant
+            id(quntis_rgb_switch).publish_state(quntis::rf->rgb_on_);
+            id(quntis_rgb_mode).publish_state(quntis::rf->rgb_mode_);
+
+            quntis::rf->updating_from_rf_ = false;
+          }

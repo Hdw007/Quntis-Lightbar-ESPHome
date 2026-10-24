@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.esphome/
+.vscode/
+.idea/
+secrets.yaml
+*.bin
+*.elf
+
