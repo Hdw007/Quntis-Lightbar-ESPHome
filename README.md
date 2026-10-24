@@ -1,6 +1,6 @@
 # Quntis RGB Pro+ Monitor Light Bar — ESPHome & RF Protocol
 
-Complete reverse-engineering and **ESPHome (Home Assistant)** integration for the **[Quntis RGB Pro+ Monitor Light Bar](https://www.quntis.com/de/products/quntis-rgb-pro-monitor-light-bar-with-remote-15-modes-gaming-backlight-4-colors-brightness-dimmable-fronlight-20-ra95-eye-care-monitor-lamp-no-screen-glare-upgraded-clip-for-all-monitor)** (Touch Remote with 14-LED ring and 15-mode RGB gaming backlight) using an **ESP32** and a **$1 nRF24L01+** module.
+Complete reverse-engineering and **ESPHome (Home Assistant)** integration for the **[Quntis RGB Pro+ Monitor Light Bar](https://www.quntis.com/de/products/quntis-rgb-pro-monitor-light-bar-with-remote-15-modes-gaming-backlight-4-colors-brightness-dimmable-fronlight-20-ra95-eye-care-monitor-lamp-no-screen-glare-upgraded-clip-for-all-monitor)** (and likely others using the Touch Remote with 14-LED ring and 15-mode RGB backlight) using an **ESP32** and a **nRF24L01+** module.
 
 <p align="center">
   <img src="https://www.quntis.com/cdn/shop/files/20251125-162341.jpg?v=1764061284&width=900" alt="Quntis RGB Pro+ Monitor Light Bar with Touch Remote" width="720">
